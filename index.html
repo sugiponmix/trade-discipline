@@ -586,6 +586,27 @@
     </div>
     <input type="file" id="rakuten-csv-input" accept=".csv" onchange="handleRakutenFile(event)" style="display:none">
 
+    <!-- Google Drive URL読み込み -->
+    <div style="margin-top:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">または Google Drive から読み込む</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;color:var(--text3);line-height:2;margin-bottom:10px">
+        <strong style="color:var(--text)">事前準備：</strong>Google DriveのCSVファイルを右クリック →「共有」→「リンクを知っている全員」に変更 → リンクをコピー
+      </div>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <input type="text" id="gdrive-url-input"
+          placeholder="https://drive.google.com/file/d/xxxxxx/view?usp=sharing"
+          style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px 12px;color:var(--text);font-size:12px;font-family:var(--mono)">
+        <button class="btn btn-primary" onclick="loadFromGDriveUrl()" style="white-space:nowrap">📂 読み込む</button>
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:var(--text3)">
+        💡 毎月同じファイルに上書き保存すれば、URLは変わりません
+      </div>
+    </div>
+
     <!-- プレビューエリア -->
     <div id="rakuten-preview" style="display:none;margin-top:16px">
       <div class="card-title">解析プレビュー</div>
@@ -786,15 +807,15 @@ function loadData() {
 function saveData(data) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   // GAS URLが設定されていれば自動的にクラウドへ同期（デバウンス2秒）
-  if (getGasUrl()) scheduleSyncToCloud();
+  if (localStorage.getItem('trade_gas_url')) scheduleSyncToCloud();
 }
 
 // デバウンス: 連続保存を2秒にまとめる
 let _syncTimer = null;
 function scheduleSyncToCloud() {
   if (_syncTimer) clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => { _syncTimer = null; autoSyncToCloud(); }, 2000);
-  setSyncIndicator('pending');
+  _syncTimer = setTimeout(() => { _syncTimer = null; if(typeof autoSyncToCloud==='function') autoSyncToCloud(); }, 2000);
+  if (typeof setSyncIndicator === 'function') setSyncIndicator('pending');
 }
 
 let DB = loadData();
@@ -1351,6 +1372,55 @@ function handleDrop2(e) {
   const file = e.dataTransfer.files[0];
   if (file) parseRakutenCSV(file);
 }
+// Google Drive 共有URLからCSVを読み込む
+async function loadFromGDriveUrl() {
+  const raw = document.getElementById('gdrive-url-input').value.trim();
+  if (!raw) { showToast('Google DriveのURLを入力してください', 'warn'); return; }
+
+  // 共有URL → 直接ダウンロードURLに変換
+  // https://drive.google.com/file/d/FILE_ID/view → https://drive.google.com/uc?export=download&id=FILE_ID
+  let fileId = null;
+  const m1 = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  const m2 = raw.match(/id=([a-zA-Z0-9_-]+)/);
+  if (m1) fileId = m1[1];
+  else if (m2) fileId = m2[1];
+
+  if (!fileId) {
+    showToast('Google DriveのURLが正しくありません', 'danger');
+    return;
+  }
+
+  const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+  showToast('Google Driveからダウンロード中…', 'info');
+
+  try {
+    const res = await fetch(downloadUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const arrayBuf = await res.arrayBuffer();
+
+    // Shift-JISデコード
+    const decoder = new TextDecoder('shift-jis');
+    const text = decoder.decode(arrayBuf);
+
+    // 楽天証券CSVかチェック
+    if (!text.includes('約定日') && !text.includes('売買区分')) {
+      showToast('楽天証券の取引履歴CSVではないようです', 'danger');
+      return;
+    }
+
+    // 既存のparseRakutenCSVテキスト版を呼ぶ
+    parseRakutenCSVText(text);
+    showToast('Google Driveから読み込みました', 'success');
+  } catch(e) {
+    // CORSエラーの場合の案内
+    if (e.message.includes('Failed to fetch') || e.message.includes('CORS')) {
+      showToast('⚠️ CORSエラー：ファイルの共有設定を「リンクを知っている全員」にしてください', 'danger');
+    } else {
+      showToast('読み込み失敗: ' + e.message, 'danger');
+    }
+  }
+}
+
 function handleRakutenFile(e) {
   const file = e.target.files[0];
   if (file) parseRakutenCSV(file);
