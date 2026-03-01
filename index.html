@@ -1793,12 +1793,7 @@ function updateLastSyncLabel(isoStr) {
 }
 
 // ── デバウンス自動保存 ──
-let _syncTimer = null;
-function scheduleSyncToCloud() {
-  if (_syncTimer) clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => { _syncTimer = null; autoSyncToCloud(); }, 2000);
-  setSyncIndicator('pending');
-}
+
 
 async function autoSyncToCloud() {
   const url = getGasUrl();
