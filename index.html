@@ -360,6 +360,17 @@
     .pos-details{grid-template-columns:repeat(2,1fr)}
     .csv-section{grid-template-columns:1fr}
   }
+
+  @keyframes pulse-icon { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.2);opacity:0.7} }
+  @keyframes progress-bar { 0%{width:0;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0;margin-left:100%} }
+  .sc-card { background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:12px;transition:border-color 0.2s }
+  .sc-card.buy  { border-color:rgba(0,230,118,0.5);background:rgba(0,230,118,0.04) }
+  .sc-card.skip { border-color:rgba(255,61,61,0.5);background:rgba(255,61,61,0.04) }
+  .sc-card.warn { border-color:rgba(255,171,0,0.5);background:rgba(255,171,0,0.04) }
+  .sc-verdict { font-size:15px;font-weight:700;font-family:var(--mono);margin-bottom:8px }
+  .sc-reason  { font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:10px }
+  .sc-meta    { display:flex;gap:12px;flex-wrap:wrap;font-size:11px;font-family:var(--mono);color:var(--text3) }
+  .sc-action  { margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--amber);line-height:1.7 }
 </style>
 </head>
 <body>
@@ -392,6 +403,7 @@
   <button class="nav-btn" onclick="switchTab('positions')" id="tab-positions">📋 保有中 <span class="nav-badge nav-badge-green" id="pos-count-badge">0</span></button>
   <button class="nav-btn" onclick="switchTab('history')" id="tab-history">📜 履歴</button>
   <button class="nav-btn" onclick="switchTab('csv')" id="tab-csv">⬆︎⬇︎ CSV</button>
+  <button class="nav-btn" onclick="switchTab('screening')" id="tab-screening">🔍 朝スクリーニング</button>
 </nav>
 
 <main class="main">
@@ -784,6 +796,77 @@ function loadFromDrive() {
   </div>
 </div>
 
+<!-- ─── SCREENING ─── -->
+<div id="page-screening" style="display:none">
+
+  <!-- ヘッダー説明 -->
+  <div class="card" style="border-color:rgba(0,230,118,0.4);background:linear-gradient(135deg,rgba(0,230,118,0.05),transparent)">
+    <div class="card-title" style="color:var(--green)">🔍 朝スクリーニング — 下落理由を即時判定</div>
+    <p style="font-size:12px;color:var(--text2);line-height:2;margin-bottom:0">
+      寄り付き後の下落銘柄コードを入力 → AIが下落理由を判定し「買える下げか／買えない下げか」を自動分類します。<br>
+      <span style="color:var(--amber)">⚡ 使い方：9:00〜9:15に楽天証券の「値下がりランキング」上位から気になる銘柄コードを入力</span>
+    </p>
+  </div>
+
+  <!-- 入力エリア -->
+  <div class="card">
+    <div class="card-title">銘柄を入力</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px">
+      <div style="flex:1;min-width:200px">
+        <label style="font-size:11px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;display:block;margin-bottom:6px">銘柄コード（複数可・スペース区切り）</label>
+        <input type="text" id="sc-codes" placeholder="例：6857 285A 6920 5803"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:10px 14px;color:var(--text);font-size:14px;font-family:var(--mono)">
+      </div>
+      <div style="min-width:160px">
+        <label style="font-size:11px;color:var(--text3);font-family:var(--mono);letter-spacing:1px;display:block;margin-bottom:6px">当日下落率（参考）</label>
+        <input type="text" id="sc-drops" placeholder="例：-5.2 -4.8 -3.1 -2.5"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:10px 14px;color:var(--red);font-size:14px;font-family:var(--mono)">
+      </div>
+      <button class="btn btn-primary" onclick="runScreening()" id="sc-run-btn" style="height:42px;padding:0 24px;white-space:nowrap">
+        🔍 判定開始
+      </button>
+    </div>
+
+    <!-- 判定基準の説明 -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.3);border-radius:5px;padding:8px 12px;font-size:11px;color:var(--green)">
+        ✅ <strong>買える下げ</strong>：増収増益・コンセンサス未達・利確売り
+      </div>
+      <div style="background:rgba(255,61,61,0.08);border:1px solid rgba(255,61,61,0.3);border-radius:5px;padding:8px 12px;font-size:11px;color:var(--red)">
+        ❌ <strong>買えない下げ</strong>：減益・不祥事・来期下方修正・セクター悪化
+      </div>
+      <div style="background:rgba(255,171,0,0.08);border:1px solid rgba(255,171,0,0.3);border-radius:5px;padding:8px 12px;font-size:11px;color:var(--amber)">
+        ⚠️ <strong>要確認</strong>：判断が難しい・追加調査推奨
+      </div>
+    </div>
+  </div>
+
+  <!-- 結果エリア -->
+  <div id="sc-results" style="display:none">
+    <div class="card-title" style="padding:0 0 12px 0;font-size:13px;color:var(--text2)">判定結果</div>
+    <div id="sc-cards"></div>
+  </div>
+
+  <!-- ローディング -->
+  <div id="sc-loading" style="display:none">
+    <div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:28px;margin-bottom:12px;animation:pulse-icon 1.5s ease-in-out infinite">🔍</div>
+      <div style="color:var(--green);font-family:var(--mono);font-size:13px" id="sc-loading-msg">AIが下落理由を分析中…</div>
+      <div style="margin-top:16px;height:2px;background:var(--border);border-radius:1px;overflow:hidden">
+        <div style="height:100%;background:var(--green);border-radius:1px;animation:progress-bar 2s ease-in-out infinite"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 履歴 -->
+  <div class="card" id="sc-history-card" style="display:none">
+    <div class="card-title">📋 本日の判定履歴</div>
+    <div id="sc-history-list"></div>
+  </div>
+
+</div>
+
+
 </main>
 </div>
 
@@ -875,7 +958,7 @@ function getViolations(pos) {
 //  TABS
 // ══════════════════════════════════════════════
 function switchTab(name) {
-  ['dashboard','entry','positions','history','csv'].forEach(t => {
+  ['dashboard','entry','positions','history','csv','screening'].forEach(t => {
     document.getElementById('page-'+t).style.display = t === name ? '' : 'none';
     document.getElementById('tab-'+t).classList.toggle('active', t === name);
   });
@@ -884,6 +967,7 @@ function switchTab(name) {
   if (name === 'positions') renderPositions();
   if (name === 'history') renderHistory();
   if (name === 'csv') { document.getElementById('setting-target').value = DB.target; initSyncUI(); }
+  if (name === 'screening') { initScreening(); }
 }
 
 // ══════════════════════════════════════════════
@@ -1964,6 +2048,198 @@ async function syncFromCloud(showResult = true) {
     else console.warn('起動時クラウド取得失敗:', e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = '⬇️ 最新データを取得'; }
+}
+
+
+// ══════════════════════════════════════════════
+//  MORNING SCREENING (AI判定)
+// ══════════════════════════════════════════════
+
+const SC_HISTORY_KEY = 'sc_history_' + new Date().toISOString().slice(0,10);
+let scHistory = JSON.parse(localStorage.getItem(SC_HISTORY_KEY) || '[]');
+
+async function runScreening() {
+  const codesRaw = document.getElementById('sc-codes').value.trim();
+  const dropsRaw = document.getElementById('sc-drops').value.trim();
+  if (!codesRaw) { showToast('銘柄コードを入力してください', 'warn'); return; }
+
+  const codes = codesRaw.split(/[\s,　]+/).filter(Boolean);
+  const drops = dropsRaw.split(/[\s,　]+/).filter(Boolean);
+
+  // UI制御
+  document.getElementById('sc-loading').style.display = '';
+  document.getElementById('sc-results').style.display = 'none';
+  document.getElementById('sc-run-btn').disabled = true;
+  document.getElementById('sc-run-btn').textContent = '🔍 分析中…';
+
+  const msgs = ['決算情報を収集中…', '前年比・コンセンサスを確認中…', '下落理由を分析中…', 'AIが判定中…'];
+  let mi = 0;
+  const msgTimer = setInterval(() => {
+    document.getElementById('sc-loading-msg').textContent = msgs[mi++ % msgs.length];
+  }, 1800);
+
+  // 銘柄ごとにAPIを並列呼び出し
+  const promises = codes.map((code, i) => analyzeStock(code, drops[i] || ''));
+  const results = await Promise.all(promises);
+
+  clearInterval(msgTimer);
+  document.getElementById('sc-loading').style.display = 'none';
+  document.getElementById('sc-run-btn').disabled = false;
+  document.getElementById('sc-run-btn').textContent = '🔍 判定開始';
+
+  // 結果表示
+  renderScreeningResults(results);
+
+  // 履歴保存
+  const timestamp = new Date().toLocaleTimeString('ja-JP', {hour:'2-digit',minute:'2-digit'});
+  results.forEach(r => {
+    scHistory.unshift({ ...r, time: timestamp });
+  });
+  localStorage.setItem(SC_HISTORY_KEY, JSON.stringify(scHistory.slice(0, 50)));
+  renderScreeningHistory();
+}
+
+async function analyzeStock(code, drop) {
+  const today = new Date().toLocaleDateString('ja-JP', {year:'numeric',month:'long',day:'numeric'});
+  const prompt = `
+あなたは日本株のデイトレード判定AIです。
+本日（${today}）の東京市場で、銘柄コード「${code}」が${drop ? drop+'%下落しています' : '大幅に下落しています'}。
+
+以下の観点で分析してください：
+1. この銘柄の直近の決算内容（増収増益か減益か）
+2. アナリストのコンセンサス予想に対して達成できたか
+3. 下落の主な理由（決算失望・利確売り・外部要因・不祥事など）
+4. 業績自体の健全性
+
+必ず以下のJSON形式のみで回答してください（他の文章は一切不要）：
+{
+  "code": "${code}",
+  "name": "銘柄名",
+  "verdict": "BUY" または "SKIP" または "WARN",
+  "reason": "下落理由を2〜3文で簡潔に（日本語）",
+  "fundamentals": "業績の状況を1文で（日本語）",
+  "action": "具体的な対応方針を1文で（日本語）",
+  "risk": "主なリスクを1文で（日本語）",
+  "confidence": 0から100の数値
+}
+
+verdict基準：
+- BUY：増収増益だがコンセンサス未達・利確売り・一時的外部要因による下落（業績は健全）
+- SKIP：減益・来期下方修正・不祥事・構造的な業績悪化
+- WARN：判断が難しい・追加確認が必要
+`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+
+    // テキストブロックからJSONを抽出
+    const textBlock = data.content?.find(b => b.type === 'text');
+    const text = textBlock?.text || '';
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return { code, name: code, verdict: 'WARN', reason: '情報取得に失敗しました', fundamentals: '不明', action: '手動で確認してください', risk: '不明', confidence: 0 };
+  } catch(e) {
+    return { code, name: code, verdict: 'WARN', reason: 'APIエラー: ' + e.message, fundamentals: '不明', action: '手動で確認してください', risk: '不明', confidence: 0 };
+  }
+}
+
+function renderScreeningResults(results) {
+  const container = document.getElementById('sc-cards');
+  const wrap = document.getElementById('sc-results');
+
+  // 判定順にソート：BUY→WARN→SKIP
+  const sorted = [...results].sort((a,b) => {
+    const order = {BUY:0, WARN:1, SKIP:2};
+    return (order[a.verdict]||1) - (order[b.verdict]||1);
+  });
+
+  container.innerHTML = sorted.map(r => {
+    const cls   = r.verdict === 'BUY' ? 'buy' : r.verdict === 'SKIP' ? 'skip' : 'warn';
+    const icon  = r.verdict === 'BUY' ? '✅ 買える下げ' : r.verdict === 'SKIP' ? '❌ 買えない下げ' : '⚠️ 要確認';
+    const color = r.verdict === 'BUY' ? 'var(--green)' : r.verdict === 'SKIP' ? 'var(--red)' : 'var(--amber)';
+    const conf  = r.confidence || 0;
+    const confColor = conf >= 70 ? 'var(--green)' : conf >= 40 ? 'var(--amber)' : 'var(--text3)';
+
+    return `<div class="sc-card ${cls}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:3px">${r.code}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--text)">${r.name || r.code}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="sc-verdict" style="color:${color}">${icon}</div>
+          <div style="font-size:10px;color:${confColor};font-family:var(--mono)">確信度 ${conf}%</div>
+        </div>
+      </div>
+      <div class="sc-reason"><strong style="color:var(--text)">📋 下落理由：</strong>${r.reason || '—'}</div>
+      <div class="sc-meta">
+        <span>💹 業績: ${r.fundamentals || '—'}</span>
+      </div>
+      <div class="sc-action">
+        <div>🎯 <strong>対応方針：</strong>${r.action || '—'}</div>
+        <div>⚡ <strong>リスク：</strong>${r.risk || '—'}</div>
+      </div>
+      ${r.verdict === 'BUY' ? `
+      <div style="margin-top:12px">
+        <button class="btn btn-primary btn-small" onclick="quickEntryFromScreening('${r.code}','${r.name || r.code}')">
+          ⚡ エントリー画面へ
+        </button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  wrap.style.display = '';
+}
+
+function quickEntryFromScreening(code, name) {
+  // エントリータブに移動してコードと銘柄名を自動入力
+  switchTab('entry');
+  setTimeout(() => {
+    const nameEl = document.getElementById('f-name');
+    const codeEl = document.getElementById('f-code');
+    if (nameEl) nameEl.value = name;
+    if (codeEl) codeEl.value = code;
+    // コンセンサス未達チェックを自動ON
+    const consensusEl = document.getElementById('f-consensus');
+    if (consensusEl) consensusEl.checked = true;
+    showToast('銘柄情報を自動入力しました', 'success');
+  }, 300);
+}
+
+function renderScreeningHistory() {
+  const card = document.getElementById('sc-history-card');
+  const list = document.getElementById('sc-history-list');
+  if (!scHistory.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  list.innerHTML = scHistory.slice(0, 20).map(r => {
+    const icon  = r.verdict === 'BUY' ? '✅' : r.verdict === 'SKIP' ? '❌' : '⚠️';
+    const color = r.verdict === 'BUY' ? 'var(--green)' : r.verdict === 'SKIP' ? 'var(--red)' : 'var(--amber)';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${icon}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:40px">${r.time || ''}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text3);min-width:50px">${r.code}</span>
+      <span style="font-size:12px;color:var(--text);flex:1">${r.name || r.code}</span>
+      <span style="font-size:11px;color:${color};font-family:var(--mono)">${r.verdict}</span>
+    </div>`;
+  }).join('');
+}
+
+// スクリーニングタブ初期化
+function initScreening() {
+  renderScreeningHistory();
 }
 
 // ══════════════════════════════════════════════
